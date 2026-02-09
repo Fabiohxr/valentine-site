@@ -1,0 +1,312 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>My Valentine</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+
+<body>
+  <!-- CAPTCHA SCREEN -->
+  <main id="captchaScreen" class="screen screen--captcha" aria-label="Captcha">
+    <div class="card">
+      <div class="card__header">
+        <h1>Bitte bestätigen</h1>
+        <p>Wähle <strong>alle kleinen Babos</strong> aus, um fortzufahren.</p>
+      </div>
+
+      <div id="grid" class="grid" role="group" aria-label="Bildauswahl"></div>
+
+      <div class="card__footer">
+        <div class="status">
+          <span id="statusText">0 ausgewählt</span>
+          <span id="hintText" class="hint">Tipp: Es sind mehrere Babos dabei.</span>
+        </div>
+        <button id="verifyBtn" class="btn" disabled>Verifizieren</button>
+      </div>
+
+      <p class="fineprint">
+        Hinweis: Das ist ein kleines Demo-Captcha (kein echtes Sicherheits-Captcha wie reCAPTCHA).
+      </p>
+    </div>
+  </main>
+
+  <!-- VALENTINE SCREEN -->
+  <main id="valentineScreen" class="screen screen--valentine is-hidden" aria-label="Valentine Animation">
+    <div class="bg-glow"></div>
+
+    <!-- floating hearts container -->
+    <div class="hearts" aria-hidden="true" id="hearts"></div>
+
+    <section class="hero" aria-label="Laura my Valentine">
+      <h2 class="title">
+        <span class="shine">My Valentine</span>
+      </h2>
+      <p class="subtitle">❤️ Für dich.</p>
+
+      <div class="actions">
+        <button class="btn btn--ghost" id="spawnMore">Mehr Herzen</button>
+        <button class="btn btn--ghost" id="restart">Zurück zu Babos</button>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    // --------- Simple image-selection captcha (demo) ----------
+   // --------- Simple image-selection captcha (demo) ----------
+const gridEl = document.getElementById("grid");
+const verifyBtn = document.getElementById("verifyBtn");
+const statusText = document.getElementById("statusText");
+const hintText = document.getElementById("hintText");
+
+const captchaScreen = document.getElementById("captchaScreen");
+const valentineScreen = document.getElementById("valentineScreen");
+
+// inline SVG "star" as decoy (no external needed)
+const svgData = {
+  star: () => `
+    <svg xmlns="http://www.w3.org/2000/svg" width="220" height="220" viewBox="0 0 220 220">
+      <defs>
+        <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0" stop-color="#fff1a8"/>
+          <stop offset=".45" stop-color="#ffd24a"/>
+          <stop offset="1" stop-color="#b87300"/>
+        </linearGradient>
+      </defs>
+      <rect width="220" height="220" rx="26" fill="#0f0f14"/>
+      <path d="M110 38 L128 86 L180 90
+               L140 124 L152 176
+               L110 148 L68 176
+               L80 124 L40 90
+               L92 86 Z" fill="url(#g)"/>
+    </svg>`,
+
+  flower: () => `
+    <svg xmlns="http://www.w3.org/2000/svg" width="220" height="220" viewBox="0 0 220 220">
+      <defs>
+        <radialGradient id="p" cx="40%" cy="35%" r="75%">
+          <stop offset="0" stop-color="#fff"/>
+          <stop offset=".4" stop-color="#c6b7ff"/>
+          <stop offset="1" stop-color="#5b3cff"/>
+        </radialGradient>
+        <radialGradient id="c" cx="50%" cy="50%" r="60%">
+          <stop offset="0" stop-color="#fff6b7"/>
+          <stop offset="1" stop-color="#ffb100"/>
+        </radialGradient>
+      </defs>
+      <rect width="220" height="220" rx="26" fill="#0f0f14"/>
+      <g transform="translate(110 110)">
+        <ellipse rx="24" ry="58" fill="url(#p)" transform="rotate(0) translate(0,-34)"/>
+        <ellipse rx="24" ry="58" fill="url(#p)" transform="rotate(60) translate(0,-34)"/>
+        <ellipse rx="24" ry="58" fill="url(#p)" transform="rotate(120) translate(0,-34)"/>
+        <ellipse rx="24" ry="58" fill="url(#p)" transform="rotate(180) translate(0,-34)"/>
+        <ellipse rx="24" ry="58" fill="url(#p)" transform="rotate(240) translate(0,-34)"/>
+        <ellipse rx="24" ry="58" fill="url(#p)" transform="rotate(300) translate(0,-34)"/>
+        <circle r="22" fill="url(#c)"/>
+      </g>
+    </svg>`
+};
+
+function toDataUrl(svg) {
+  return "data:image/svg+xml;charset=utf-8," + encodeURIComponent(svg.trim());
+}
+
+// >>> DEINE 4 CUSTOM BILDER (Pfad/Dateiname ggf. anpassen)
+const customImages = [
+  { type: "custom", src: "img/image0.jpeg" },
+  { type: "custom", src: "img/image1.png" },
+  { type: "custom", src: "img/image2.jpeg" },
+  { type: "custom", src: "img/image4.jpg" },
+  { type: "custom", src: "img/image3.jpeg" }
+];
+
+// Decoys (Sterne) – Anzahl anpassen wie du willst:
+const starDecoys = Array.from({ length: 2 }, () => ({ type: "star" }));
+const flowerDecoys = Array.from({ length: 2 }, () => ({ type: "flower" }));
+
+
+function shuffle(arr) {
+  const a = arr.slice();
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+
+let puzzle = [];
+let selected = new Set();
+
+function renderCaptcha() {
+  gridEl.innerHTML = "";
+  selected.clear();
+  verifyBtn.disabled = true;
+
+  hintText.textContent = "Tipp: Junge kennst du deinen Valentine nicht...";
+
+  // 3x3 = 9 Felder: 4 custom + 5 Sterne = 9
+  puzzle = shuffle([
+  ...customImages,
+  ...starDecoys,
+  ...flowerDecoys
+  ]).map((t, idx) => ({ ...t, id: idx }));
+
+
+  puzzle.forEach(tile => {
+    const btn = document.createElement("button");
+    btn.className = "tile";
+    btn.type = "button";
+    btn.setAttribute("aria-pressed", "false");
+    btn.dataset.id = tile.id;
+
+    const img = document.createElement("div");
+    img.className = "tile__img";
+
+ if (tile.type === "custom") {
+  img.style.backgroundImage = `url("${tile.src}")`;
+} else if (tile.type === "star") {
+  img.style.backgroundImage = `url("${toDataUrl(svgData.star())}")`;
+} else {
+  img.style.backgroundImage = `url("${toDataUrl(svgData.flower())}")`;
+}
+
+
+    const label = document.createElement("span");
+    label.className = "sr-only";
+    label.textContent = "Bild auswählen";
+
+    btn.appendChild(img);
+    btn.appendChild(label);
+
+    btn.addEventListener("click", () => {
+      const id = Number(btn.dataset.id);
+      if (selected.has(id)) {
+        selected.delete(id);
+        btn.classList.remove("is-selected");
+        btn.setAttribute("aria-pressed", "false");
+      } else {
+        selected.add(id);
+        btn.classList.add("is-selected");
+        btn.setAttribute("aria-pressed", "true");
+      }
+      statusText.textContent = `${selected.size} ausgewählt`;
+      verifyBtn.disabled = selected.size === 0;
+    });
+
+    gridEl.appendChild(btn);
+  });
+
+  statusText.textContent = `0 ausgewählt`;
+}
+
+function verifyCaptcha() {
+  const selectedTiles = puzzle.filter(t => selected.has(t.id));
+  const allCustom = puzzle.filter(t => t.type === "custom");
+
+  const ok =
+    selectedTiles.length === allCustom.length &&
+    selectedTiles.every(t => t.type === "custom");
+
+  if (!ok) {
+    hintText.textContent = "Nicht ganz — 5 mal ist Babo hier 🙂";
+    hintText.classList.add("hint--warn");
+    setTimeout(() => hintText.classList.remove("hint--warn"), 900);
+    return;
+  }
+
+  captchaScreen.classList.add("fade-out");
+  setTimeout(() => {
+    captchaScreen.classList.add("is-hidden");
+    valentineScreen.classList.remove("is-hidden");
+    spawnHearts(26);
+  }, 380);
+}
+
+verifyBtn.addEventListener("click", verifyCaptcha);
+
+// init
+renderCaptcha();
+
+
+    // --------- Hearts background animation ----------
+    const heartsEl = document.getElementById("hearts");
+    const spawnMoreBtn = document.getElementById("spawnMore");
+    const restartBtn = document.getElementById("restart");
+
+    function rand(min, max) {
+      return Math.random() * (max - min) + min;
+    }
+
+function makeHeart() {
+  const h = document.createElement("span");
+  h.className = "heart";
+
+  const left = rand(0, 100);
+  const size = rand(14, 42);
+  const duration = rand(7, 15);
+  const delay = rand(-8, 0);
+  const drift = rand(-14, 14);
+  const blur = rand(0, 1.0);
+  const opacity = rand(0.35, 0.9);
+
+  // leichte Farbvariation
+  const hues = [345, 352, 0, 330]; // pink/rot
+  const hue = hues[Math.floor(Math.random() * hues.length)];
+  const sat = rand(70, 95).toFixed(0);
+  const light = rand(52, 68).toFixed(0);
+
+  h.style.left = left + "vw";
+  h.style.setProperty("--size", size + "px");
+  h.style.setProperty("--dur", duration + "s");
+  h.style.setProperty("--delay", delay + "s");
+  h.style.setProperty("--drift", drift + "vw");
+  h.style.setProperty("--blur", blur + "px");
+  h.style.setProperty("--opacity", opacity.toFixed(2));
+
+  // echtes SVG-Herz (sieht immer nach Herz aus)
+  h.innerHTML = `
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <defs>
+        <linearGradient id="hg" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0" stop-color="hsl(${hue}, ${sat}%, ${Number(light)+10}%)" stop-opacity="0.95"/>
+          <stop offset="1" stop-color="hsl(${hue}, ${sat}%, ${light}%)" stop-opacity="0.95"/>
+        </linearGradient>
+      </defs>
+      <path fill="url(#hg)" d="M12 21s-7.2-4.6-9.6-8.7C.5 8.8 2.1 5.6 5.4 4.7c1.9-.5 3.8.2 4.9 1.6 1.1-1.4 3-2.1 4.9-1.6 3.3.9 4.9 4.1 3 7.6C19.2 16.4 12 21 12 21z"/>
+    </svg>
+  `;
+
+  h.addEventListener("animationend", () => h.remove());
+  return h;
+}
+
+    function spawnHearts(count = 18) {
+      for (let i = 0; i < count; i++) {
+        heartsEl.appendChild(makeHeart());
+      }
+    }
+
+    // keep a gentle stream
+    let streamTimer = null;
+    function startStream() {
+      if (streamTimer) clearInterval(streamTimer);
+      streamTimer = setInterval(() => spawnHearts(3), 900);
+    }
+
+    spawnMoreBtn.addEventListener("click", () => spawnHearts(22));
+
+    restartBtn.addEventListener("click", () => {
+      // reset screens
+      valentineScreen.classList.add("is-hidden");
+      captchaScreen.classList.remove("is-hidden", "fade-out");
+      heartsEl.innerHTML = "";
+      renderCaptcha();
+    });
+
+    // init
+    renderCaptcha();
+    startStream();
+  </script>
+</body>
+</html>
